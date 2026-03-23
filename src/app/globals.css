@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Background */
+    --background: 0 0% 100%;
+    --background-subtle: 0 0% 97%;
+    --background-muted: 0 0% 94%;
+
+    /* Foreground */
+    --foreground: 222 47% 7%;
+    --foreground-muted: 215 16% 47%;
+    --foreground-subtle: 215 16% 65%;
+
+    /* Border */
+    --border: 214 32% 91%;
+    --border-strong: 214 32% 80%;
+
+    /* Brand (Indigo) */
+    --brand: 239 84% 67%;
+    --brand-foreground: 0 0% 100%;
+    --brand-muted: 239 84% 95%;
+
+    /* Anxiety Levels */
+    --level-low: 142 71% 45%;
+    --level-low-bg: 142 71% 97%;
+    --level-moderate: 38 92% 50%;
+    --level-moderate-bg: 38 92% 97%;
+    --level-high: 0 72% 51%;
+    --level-high-bg: 0 72% 97%;
+
+    /* Surface */
+    --surface: 0 0% 100%;
+    --surface-raised: 0 0% 100%;
+    --overlay: 0 0% 100%;
+
+    /* Ring */
+    --ring: 239 84% 67%;
+    
+    /* Radius */
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 47% 4%;
+    --background-subtle: 222 47% 6%;
+    --background-muted: 222 47% 9%;
+    --foreground: 210 40% 96%;
+    --foreground-muted: 215 20% 55%;
+    --foreground-subtle: 215 20% 40%;
+    --border: 217 33% 14%;
+    --border-strong: 217 33% 20%;
+    --brand: 239 84% 67%;
+    --brand-muted: 239 84% 12%;
+    --level-low-bg: 142 71% 8%;
+    --level-moderate-bg: 38 92% 8%;
+    --level-high-bg: 0 72% 8%;
+    --surface: 222 47% 6%;
+    --surface-raised: 222 47% 8%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

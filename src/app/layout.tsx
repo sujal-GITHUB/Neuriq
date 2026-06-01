@@ -8,8 +8,8 @@ import { ThemeProvider } from '@/components/ThemeProvider';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Neuriq — Clinical Anxiety Detection',
-  description: 'Research-grade EEG-based mental anxiety detection using ML/DL models.',
+  title: 'Neuriq',
+  description: 'Research-grade EEG-based mental stress & anxiety detection using ML/DL models.',
 };
 
 export default function RootLayout({

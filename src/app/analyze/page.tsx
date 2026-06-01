@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/Button"
 import { Badge } from "@/components/ui/Badge"
 import { Input } from "@/components/ui/Input"
-import { Upload, ChevronDown, ChevronRight } from "lucide-react"
+import { Upload, ChevronDown, ChevronRight, Loader2, CheckCircle2 } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { useRouter } from "next/navigation"
 
@@ -20,6 +20,8 @@ export default function AnalyzePage() {
   const [activeTab, setActiveTab] = React.useState<"upload" | "manual">("upload")
   const [selectedModel, setSelectedModel] = React.useState("gradient")
   const [file, setFile] = React.useState<File | null>(null)
+  const [uploading, setUploading] = React.useState(false)
+  const [uploadedData, setUploadedData] = React.useState<any>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   
   const [expanded, setExpanded] = React.useState({
@@ -28,7 +30,7 @@ export default function AnalyzePage() {
     asymmetry: true
   })
 
-  // Mock form state
+  // Editable form state
   const [features, setFeatures] = React.useState({
     delta: "25.3", theta: "12.8", alpha: "18.5", beta: "15.2", gamma: "6.7",
     hjorth_activity: "0.8", sample_entropy: "1.2", hjorth_complexity: "2.1",
@@ -42,6 +44,131 @@ export default function AnalyzePage() {
     { id: "cnn", name: "CNN-LSTM", acc: "89.2%", desc: "Deep spatio-temporal" }
   ]
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const selectedFile = e.target.files[0];
+      setFile(selectedFile);
+      setUploading(true);
+      
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      
+      try {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          body: formData
+        });
+        if (res.ok) {
+          const parsed = await res.json();
+          setUploadedData(parsed);
+        } else {
+          console.error("Upload failed");
+        }
+      } catch (err) {
+        console.error("Upload error", err);
+      } finally {
+        setUploading(false);
+      }
+    }
+  };
+
+  const handleRunAnalysis = () => {
+    let payload: any = {};
+    if (activeTab === "upload") {
+      if (uploadedData) {
+        payload = {
+          signals: uploadedData.signals,
+          channels: uploadedData.channels,
+          sampling_rate: uploadedData.sampling_rate,
+          model: selectedModel,
+          manual: false
+        };
+      } else {
+        // Fallback mock continuous signals if no file uploaded
+        const mockChannels = ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'];
+        const mockSignals = mockChannels.map(() => 
+          Array.from({ length: 3840 }, () => (Math.random() - 0.5) * 30)
+        );
+        payload = {
+          signals: mockSignals,
+          channels: mockChannels,
+          sampling_rate: 128,
+          model: selectedModel,
+          manual: false
+        };
+      }
+    } else {
+      payload = {
+        features: {
+          "PSD_Delta_Fp1": parseFloat(features.delta) || 25.3,
+          "PSD_Theta_Fp1": parseFloat(features.theta) || 12.8,
+          "PSD_Alpha_Fp1": parseFloat(features.alpha) || 18.5,
+          "PSD_Beta_Fp1": parseFloat(features.beta) || 15.2,
+          "PSD_Gamma_Fp1": parseFloat(features.gamma) || 6.7,
+          "PSD_Delta_F3": parseFloat(features.delta) || 25.3,
+          "PSD_Theta_F3": parseFloat(features.theta) || 12.8,
+          "PSD_Alpha_F3": parseFloat(features.f3_alpha) || 12.4,
+          "PSD_Beta_F3": parseFloat(features.beta) || 15.2,
+          "PSD_Gamma_F3": parseFloat(features.gamma) || 6.7,
+          "PSD_Delta_F4": parseFloat(features.delta) || 25.3,
+          "PSD_Theta_F4": parseFloat(features.theta) || 12.8,
+          "PSD_Alpha_F4": parseFloat(features.f4_alpha) || 15.1,
+          "PSD_Beta_F4": parseFloat(features.beta) || 15.2,
+          "PSD_Gamma_F4": parseFloat(features.gamma) || 6.7
+        },
+        model: selectedModel,
+        manual: true
+      };
+    }
+
+    try {
+      localStorage.setItem("neuriq-analysis-request", JSON.stringify(payload));
+    } catch (e) {
+      console.error("Failed to save request payload to localStorage", e);
+    }
+    
+    router.push("/results");
+  };
+
+  const loadPreset = (type: "anxious" | "relaxed") => {
+    if (type === "anxious") {
+      setFeatures({
+        delta: "14.2", theta: "8.5", alpha: "5.8", beta: "28.4", gamma: "11.2",
+        hjorth_activity: "1.4", sample_entropy: "0.65", hjorth_complexity: "1.25",
+        f3_alpha: "5.2", f4_alpha: "11.4"
+      });
+    } else {
+      setFeatures({
+        delta: "25.3", theta: "12.8", alpha: "18.5", beta: "15.2", gamma: "6.7",
+        hjorth_activity: "0.8", sample_entropy: "1.2", hjorth_complexity: "2.1",
+        f3_alpha: "12.4", f4_alpha: "15.1"
+      });
+    }
+  };
+
+  const clearAll = () => {
+    setFeatures({
+      delta: "", theta: "", alpha: "", beta: "", gamma: "",
+      hjorth_activity: "", sample_entropy: "", hjorth_complexity: "",
+      f3_alpha: "", f4_alpha: ""
+    });
+  };
+
+  // Re-map the signal preview graph dynamically based on uploaded data
+  const waveformData = React.useMemo(() => {
+    if (uploadedData && uploadedData.signals && uploadedData.signals.length > 0) {
+      const length = Math.min(50, uploadedData.signals[0].length);
+      const ch1 = uploadedData.channels[0] || "Ch1";
+      const ch2 = uploadedData.channels[1] || "Ch2";
+      return Array.from({ length }, (_, i) => ({
+        time: i,
+        [ch1]: uploadedData.signals[0][i],
+        [ch2]: uploadedData.signals[1] ? uploadedData.signals[1][i] : 0
+      }));
+    }
+    return MOCK_WAVEFORM;
+  }, [uploadedData]);
+
   const SectionHeader = ({ title, id }: { title: string, id: keyof typeof expanded }) => (
     <div 
       className="flex items-center justify-between py-3 border-b border-border cursor-pointer mb-4"
@@ -51,6 +178,9 @@ export default function AnalyzePage() {
       {expanded[id] ? <ChevronDown className="w-4 h-4 text-foreground-muted" /> : <ChevronRight className="w-4 h-4 text-foreground-muted" />}
     </div>
   )
+
+  const activeChannel1 = uploadedData?.channels?.[0] || "AF3";
+  const activeChannel2 = uploadedData?.channels?.[1] || "F7";
 
   return (
     <div className="w-full pt-16 pb-24 px-0 max-w-7xl mx-auto">
@@ -84,27 +214,43 @@ export default function AnalyzePage() {
 
           {activeTab === "upload" ? (
             <div 
-              className="border-2 border-dashed border-border rounded-lg p-12 text-center hover:border-brand hover:bg-brand/5 transition-colors cursor-pointer group"
-              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-border rounded-lg p-12 text-center hover:border-brand hover:bg-brand/5 transition-colors cursor-pointer group relative"
+              onClick={() => !uploading && fileInputRef.current?.click()}
             >
               <input 
                 type="file" 
                 className="hidden" 
                 ref={fileInputRef} 
                 accept=".edf,.bdf,.mat,.csv"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    setFile(e.target.files[0])
-                  }
-                }}
+                onChange={handleFileChange}
+                disabled={uploading}
               />
-              <Upload className="mx-auto text-foreground-subtle group-hover:text-brand transition-colors w-6 h-6" />
-              <h3 className="text-sm font-medium text-foreground mt-3">
-                {file ? file.name : "Drag & drop EEG recording"}
-              </h3>
-              <p className="text-xs text-foreground-muted mt-1">
-                {file ? `${(file.size / 1024).toFixed(1)} KB` : "Accepted formats: .edf, .bdf, .mat, .csv"}
-              </p>
+              {uploading ? (
+                <div className="py-4 flex flex-col items-center">
+                  <Loader2 className="animate-spin text-brand w-8 h-8 mb-3" />
+                  <h3 className="text-sm font-medium text-foreground">Processing EEG Channels...</h3>
+                  <p className="text-xs text-foreground-muted mt-1">Filtering signals and calculating spectral attributes</p>
+                </div>
+              ) : uploadedData ? (
+                <div className="py-2">
+                  <CheckCircle2 className="mx-auto text-level-low w-8 h-8 mb-3" />
+                  <h3 className="text-sm font-medium text-foreground">{file?.name}</h3>
+                  <p className="text-xs text-brand font-medium mt-1">
+                    Successfully loaded {uploadedData.channels.length} EEG channels ({uploadedData.duration_sec}s @ {uploadedData.sampling_rate}Hz)
+                  </p>
+                  <p className="text-xs text-foreground-subtle mt-2">Click to replace file</p>
+                </div>
+              ) : (
+                <>
+                  <Upload className="mx-auto text-foreground-subtle group-hover:text-brand transition-colors w-6 h-6" />
+                  <h3 className="text-sm font-medium text-foreground mt-3">
+                    Drag & drop EEG recording
+                  </h3>
+                  <p className="text-xs text-foreground-muted mt-1">
+                    Accepted formats: .edf, .bdf, .mat, .csv
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
@@ -114,11 +260,11 @@ export default function AnalyzePage() {
                 <AnimatePresence>
                   {expanded.band && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="grid grid-cols-2 gap-4">
-                      <Input label="Delta" unit="µV²" value={features.delta} readOnly />
-                      <Input label="Theta" unit="µV²" value={features.theta} readOnly />
-                      <Input label="Alpha" unit="µV²" value={features.alpha} readOnly />
-                      <Input label="Beta" unit="µV²" value={features.beta} readOnly />
-                      <Input label="Gamma" unit="µV²" value={features.gamma} readOnly />
+                      <Input label="Delta" unit="µV²" value={features.delta} onChange={(e) => setFeatures(p => ({ ...p, delta: e.target.value }))} />
+                      <Input label="Theta" unit="µV²" value={features.theta} onChange={(e) => setFeatures(p => ({ ...p, theta: e.target.value }))} />
+                      <Input label="Alpha" unit="µV²" value={features.alpha} onChange={(e) => setFeatures(p => ({ ...p, alpha: e.target.value }))} />
+                      <Input label="Beta" unit="µV²" value={features.beta} onChange={(e) => setFeatures(p => ({ ...p, beta: e.target.value }))} />
+                      <Input label="Gamma" unit="µV²" value={features.gamma} onChange={(e) => setFeatures(p => ({ ...p, gamma: e.target.value }))} />
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -129,9 +275,9 @@ export default function AnalyzePage() {
                 <AnimatePresence>
                   {expanded.nonlinear && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="grid grid-cols-2 gap-4">
-                      <Input label="Hjorth Activity" value={features.hjorth_activity} readOnly />
-                      <Input label="Sample Entropy" value={features.sample_entropy} readOnly />
-                      <Input label="Hjorth Complexity" value={features.hjorth_complexity} readOnly />
+                      <Input label="Hjorth Activity" value={features.hjorth_activity} onChange={(e) => setFeatures(p => ({ ...p, hjorth_activity: e.target.value }))} />
+                      <Input label="Sample Entropy" value={features.sample_entropy} onChange={(e) => setFeatures(p => ({ ...p, sample_entropy: e.target.value }))} />
+                      <Input label="Hjorth Complexity" value={features.hjorth_complexity} onChange={(e) => setFeatures(p => ({ ...p, hjorth_complexity: e.target.value }))} />
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -142,17 +288,17 @@ export default function AnalyzePage() {
                 <AnimatePresence>
                   {expanded.asymmetry && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="grid grid-cols-2 gap-4">
-                      <Input label="F3 Alpha Power" unit="dB" value={features.f3_alpha} readOnly />
-                      <Input label="F4 Alpha Power" unit="dB" value={features.f4_alpha} readOnly />
+                      <Input label="F3 Alpha Power" unit="dB" value={features.f3_alpha} onChange={(e) => setFeatures(p => ({ ...p, f3_alpha: e.target.value }))} />
+                      <Input label="F4 Alpha Power" unit="dB" value={features.f4_alpha} onChange={(e) => setFeatures(p => ({ ...p, f4_alpha: e.target.value }))} />
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
 
               <div className="flex gap-2 mt-6">
-                <Button variant="outline" size="sm">Anxious Example</Button>
-                <Button variant="outline" size="sm">Non-Anxious Example</Button>
-                <Button variant="ghost" size="sm" className="ml-auto">Clear All</Button>
+                <Button variant="outline" size="sm" onClick={() => loadPreset("anxious")}>Anxious Example</Button>
+                <Button variant="outline" size="sm" onClick={() => loadPreset("relaxed")}>Non-Anxious Example</Button>
+                <Button variant="ghost" size="sm" className="ml-auto" onClick={clearAll}>Clear All</Button>
               </div>
             </motion.div>
           )}
@@ -175,7 +321,9 @@ export default function AnalyzePage() {
           </div>
 
           <div className="pt-4">
-            <Button size="lg" className="w-full" onClick={() => router.push('/results')}>Run Anxiety Analysis</Button>
+            <Button size="lg" className="w-full" onClick={handleRunAnalysis} disabled={uploading}>
+              Run Anxiety Analysis
+            </Button>
             <p className="text-xs text-foreground-subtle text-center mt-3">Estimated time: under 2 seconds</p>
           </div>
 
@@ -188,17 +336,17 @@ export default function AnalyzePage() {
           <div className="bg-background-subtle border border-border rounded-lg p-4 mb-6">
             <div className="h-[200px] w-full mb-3">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={MOCK_WAVEFORM} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                <LineChart data={waveformData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
                   <XAxis dataKey="time" hide />
                   <YAxis hide domain={['auto', 'auto']} />
-                  <Line type="monotone" dataKey="AF3" stroke="hsl(var(--brand))" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="F7" stroke="hsl(var(--border-strong))" strokeWidth={1} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey={activeChannel1} stroke="hsl(var(--brand))" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey={activeChannel2} stroke="hsl(var(--border-strong))" strokeWidth={1} dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
             
             <div className="grid grid-cols-7 gap-1">
-              {["AF3", "F7", "F3", "FC5", "T7", "P7", "O1"].map((ch, i) => (
+              {(uploadedData?.channels?.slice(0, 7) || ["AF3", "F7", "F3", "FC5", "T7", "P7", "O1"]).map((ch: string, i: number) => (
                 <div key={ch} className={`text-xs border rounded px-2 py-0.5 text-center cursor-pointer ${i === 0 ? "bg-foreground text-background border-foreground" : "border-border text-foreground-subtle hover:text-foreground"}`}>
                   {ch}
                 </div>
@@ -211,11 +359,11 @@ export default function AnalyzePage() {
             <table className="w-full text-left text-xs">
               <tbody>
                 {Object.entries({
-                  "Alpha Power": "18.5 µV²",
-                  "Beta Power": "15.2 µV²",
-                  "Alpha/Beta Ratio": "1.22",
-                  "Frontal Asymmetry": "-0.23",
-                  "Sample Entropy": "1.20"
+                  "Alpha Power": `${parseFloat(features.alpha || "0").toFixed(1)} µV²`,
+                  "Beta Power": `${parseFloat(features.beta || "0").toFixed(1)} µV²`,
+                  "Alpha/Beta Ratio": features.alpha && features.beta ? (parseFloat(features.alpha) / parseFloat(features.beta)).toFixed(2) : "1.22",
+                  "Frontal Asymmetry": features.f4_alpha && features.f3_alpha ? (parseFloat(features.f4_alpha) - parseFloat(features.f3_alpha)).toFixed(2) : "-0.23",
+                  "Sample Entropy": `${parseFloat(features.sample_entropy || "0").toFixed(2)}`
                 }).map(([k, v], i) => (
                   <tr key={k} className={i % 2 === 0 ? "bg-background-subtle/50" : "bg-transparent"}>
                     <td className="px-4 py-2 text-foreground-muted">{k}</td>

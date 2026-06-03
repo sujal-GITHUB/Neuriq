@@ -15,17 +15,28 @@ export default function ResultsPage() {
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    // We send a mock request to the backend. The python ML service 
-    // mock_responses.py will return a randomized realistic DASPS JSON.
-    const reqBody = {
-      signals: [[0.1, 0.2], [0.3, 0.4]],
-      channels: ["F3", "F4", "AF3", "F7"],
-      sampling_rate: 128,
-      modalities: ["EEG"],
-      model: "boosting_ensemble"
-    };
+    let reqBody: any = null;
+    try {
+      const saved = localStorage.getItem('neuriq-analysis-request');
+      if (saved) {
+        reqBody = JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Failed to parse saved request", e);
+    }
 
-    fetch("http://127.0.0.1:8000/predict", {
+    if (!reqBody) {
+      reqBody = {
+        signals: [[0.1, 0.2], [0.3, 0.4]],
+        channels: ["F3", "F4", "AF3", "F7"],
+        sampling_rate: 128,
+        modalities: ["EEG"],
+        model: "ensemble",
+        manual: false
+      };
+    }
+
+    fetch("/api/predict", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(reqBody)

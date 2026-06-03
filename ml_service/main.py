@@ -6,6 +6,7 @@ Exposes endpoints for prediction, training, metrics, and data management.
 Integrated with the XGForest Stacking Classifier and PCA-RFE pipelines.
 """
 
+# Hot-reload triggered: Loaded new GPU-trained CUDA Stacking Ensemble models from checkpoints
 from fastapi import FastAPI, BackgroundTasks, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -49,7 +50,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Initialize Inference Engine ─────────────────────────────────────
+# ── Initialize Inference Engine (Live Reload Active) ────────────────
 inference_engine = AnxietyInferenceEngine()
 
 # In-memory training job store
@@ -79,6 +80,16 @@ class TrainRequest(BaseModel):
     cv_folds: int = Field(default=5)
     use_smote: bool = Field(default=False)
     eval_split: str = Field(default="kfold", description="kfold")
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    systemPrompt: str
 
 
 # ── Endpoints ───────────────────────────────────────────────────────
@@ -155,7 +166,8 @@ async def run_training_pipeline_task(job_id: str):
         inference_engine.load_models()
         
         # Get metrics
-        metrics_file = "ml_service/results/eeg_model_evaluation.json"
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        metrics_file = os.path.join(current_dir, "results", "eeg_model_evaluation.json")
         metrics_data = {}
         if os.path.exists(metrics_file):
             with open(metrics_file, "r") as f:
@@ -193,7 +205,8 @@ async def get_training_status(job_id: str):
 @app.get("/metrics/{model_name}/{dataset}")
 async def get_metrics(model_name: str, dataset: str):
     """Get full metrics for a trained model on a specific dataset."""
-    metrics_file = "ml_service/results/eeg_model_evaluation.json"
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    metrics_file = os.path.join(current_dir, "results", "eeg_model_evaluation.json")
     if os.path.exists(metrics_file):
         with open(metrics_file, "r") as f:
             return json.load(f)
@@ -205,7 +218,8 @@ async def get_metrics(model_name: str, dataset: str):
 async def list_models():
     """List all available trained model checkpoints."""
     checkpoints = []
-    checkpoint_dir = "ml_service/models/checkpoints"
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    checkpoint_dir = os.path.join(current_dir, "models", "checkpoints")
     if os.path.exists(checkpoint_dir):
         for f in os.listdir(checkpoint_dir):
             if f.endswith(".joblib") or f.endswith(".pt"):
@@ -221,7 +235,8 @@ async def list_models():
 async def list_datasets():
     """Get info about available datasets."""
     datasets = []
-    dataset_dir = "ml_service/datasets"
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    dataset_dir = os.path.join(current_dir, "datasets")
     if os.path.exists(dataset_dir):
         for f in os.listdir(dataset_dir):
             if f.endswith(".csv"):
@@ -231,6 +246,59 @@ async def list_datasets():
                     "path": os.path.join(dataset_dir, f)
                 })
     return datasets
+
+
+@app.post("/api/assistant/chat")
+async def assistant_chat(request: ChatRequest):
+    """Securely proxy the chat completion requests to OpenRouter on the backend."""
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    model_name = os.environ.get("OPENROUTER_MODEL", "openrouter/owl-alpha")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="OPENROUTER_API_KEY environment variable is not configured on the backend (.env file)."
+        )
+        
+    import urllib.request
+    import urllib.error
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "Neuriq Assistant"
+    }
+    
+    body = {
+        "model": model_name,
+        "messages": [{"role": "system", "content": request.systemPrompt}] + [
+            {"role": m.role, "content": m.content} for m in request.messages
+        ]
+    }
+    
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers=headers,
+        method="POST"
+    )
+    
+    try:
+        def _perform_request():
+            with urllib.request.urlopen(req, timeout=60) as response:
+                return json.loads(response.read().decode("utf-8"))
+                
+        res_data = await asyncio.to_thread(_perform_request)
+        content = res_data["choices"][0]["message"]["content"]
+        return {"content": content}
+        
+    except urllib.error.HTTPError as e:
+        err_msg = e.read().decode("utf-8")
+        raise HTTPException(status_code=e.code, detail=f"OpenRouter API error: {err_msg}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}")
 
 
 # ── Run ─────────────────────────────────────────────────────────────

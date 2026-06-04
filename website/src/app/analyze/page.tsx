@@ -670,7 +670,7 @@ export default function AnalyzePage() {
                     itemStyle={{ fontSize: "10px" }}
                   />
                   <Bar dataKey="Importance" fill="hsl(var(--brand))" radius={[0, 4, 4, 0]}>
-                    {shapBarData.map((entry, index) => {
+                    {shapBarData.map((entry: { name: string; Importance: number }, index: number) => {
                       const colors = ["#a855f7", "#3b82f6", "#10b981", "#f59e0b", "#ef4444"];
                       return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
                     })}

@@ -2,7 +2,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
-  label: string
+  label?: string
   helperText?: string
   error?: string
   unit?: string
@@ -12,7 +12,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, label, helperText, error, unit, ...props }, ref) => {
     return (
       <div className="w-full flex flex-col gap-1">
-        <label className="text-xs font-medium text-foreground-muted">{label}</label>
+        {label && <label className="text-xs font-medium text-foreground-muted">{label}</label>}
         <div className="relative flex items-center">
           <input
             type={type}
